@@ -17,11 +17,11 @@ async def main():
     proxy_endpoint = "http://127.0.0.1:8000"  # Local proxy server
 
     llm = AzureChatOpenAI(
-        model = "o1",
+        model = "o3-mini",
         api_version = '2024-12-01-preview',  # Updated to match the proxy's default API version
         api_key = api_key,
         azure_endpoint = proxy_endpoint,
-        azure_deployment = "o1",  # Match the deployment from proxy
+        azure_deployment = "o3-mini",  # Match the deployment from proxy
         disabled_params={'parallel_tool_calls': None},
     )
 
@@ -34,7 +34,7 @@ async def main():
         browser = browser,
         task = what_to_browse,
         llm = llm,
-        use_vision=True,
+        use_vision=False,
     )
 
     history : AgentHistoryList = await agent.run()
