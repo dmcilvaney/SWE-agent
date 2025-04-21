@@ -1,0 +1,1 @@
+sweagent run --env.repo.github_url=https://github.com/SWE-agent/test-repo --problem_statement.github_url=https://github.com/SWE-agent/test-repo/issues/1 --agent.model.name=azure/gpt-4o --agent.model.api_base='http://127.0.0.1:8000'

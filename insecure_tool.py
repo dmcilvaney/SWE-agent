@@ -10,18 +10,18 @@ from browser_use import Agent, AgentHistoryList, Browser, BrowserConfig
 from langchain_openai import AzureChatOpenAI
 
 async def main():
-    what_to_browse = "What is the fax number of example.com's maintainer?"  # Default URL
+    what_to_browse = "Visit example.com and find the fax number of it's maintainer."  # Default URL
 
     # Use our proxy endpoint instead of direct Azure endpoint
     api_key = "sk-proxy-fake-key-for-local-use-only"
     proxy_endpoint = "http://127.0.0.1:8000"  # Local proxy server
 
     llm = AzureChatOpenAI(
-        model = "o3-mini",
+        model = "gpt-4o",
         api_version = '2024-12-01-preview',  # Updated to match the proxy's default API version
         api_key = api_key,
         azure_endpoint = proxy_endpoint,
-        azure_deployment = "o3-mini",  # Match the deployment from proxy
+        azure_deployment = "gpt-4o",  # Match the deployment from proxy
         disabled_params={'parallel_tool_calls': None},
     )
 
