@@ -1,0 +1,685 @@
+diff --git a/.gitignore b/.gitignore
+index f0b0020b..d053c296 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -118,6 +118,7 @@ celerybeat.pid
+ .venv
+ env/
+ venv/
++swe-agent-venv/
+ ENV/
+ env.bak/
+ venv.bak/
+diff --git a/config/check_browser.yaml b/config/check_browser.yaml
+new file mode 100644
+index 00000000..3fc1db97
+--- /dev/null
++++ b/config/check_browser.yaml
+@@ -0,0 +1,90 @@
++agent:
++  templates:
++    system_template: |-
++      SETTING: You are an autonomous programmer, and you're working directly in the command line with a special interface.
++      Your primary job is to find related information about a CVE.
++      You'll get the NIST CVE-ID for the vulnerability.
++
++      The special interface consists of a file editor that shows you {{WINDOW}} lines of a file at a time.
++      In addition to typical bash commands, you can also use specific commands to help you navigate and edit files.
++      To call a command, you need to invoke it with a function call/tool call.
++
++      First, you should _always_ include a general thought about what you're going to do next.
++      Then, for every response, you must include exactly _ONE_ tool call/function call.
++
++      Remember, you should always include a _SINGLE_ tool call/function call and then wait for a response from the shell before continuing with more discussion and commands. Everything you include in the DISCUSSION section will be saved for future reference.
++      If you'd like to issue two commands at once, PLEASE DO NOT DO THAT! Please instead first submit just the first tool call, and then after receiving a response you'll be able to issue the second .
++      Note that the environment does NOT support interactive session commands (e.g. python, vim), so please do not invoke them. Any command that require interactive session like "git show", "git log", etc., will not work.
++      If you want those output, redirect the output to some temporary files and read the files. Try to create the files at /backport/tmp/ directory. Because those temporary files shouldn't affect the final_patch. If the directory /backport/tmp/ doesn't exist, please create it.
++    instance_template: |-
++      ISSUE:
++      {{problem_statement}}
++  
++      INSTRUCTIONS:
++      Now, you're going to solve this issue on your own. Your terminal session has started and you're in the repository's root directory. You can use any bash commands or the special interface to help you. Edit all the files you need to and run any checks or tests that you want.
++      Remember, YOU SHOULD ALWAYS INCLUDE EXACTLY ONE TOOL CALL/FUNCTION CALL PER RESPONSE.
++      When you're satisfied with all of the changes you've made, you can submit your changes to the code base by simply running the submit command.
++      Note however that you cannot use any interactive session commands (e.g. python, vim) in this environment, but you can write scripts and run them. E.g. you can write a python script and then run it with the python command.
++
++      NOTE ABOUT THE EDIT COMMAND: Indentation really matters! When editing a file, make sure to insert appropriate indentation before each line!
++
++      Always try to use the `browse` tool to check whether you have access to Internet first.
++
++      GENERAL IMPORTANT TIPS:
++
++      1. If you run a command and it doesn't work, try running a different command. A command that did not work once will not work the second time unless you modify it!
++
++      2. If you open a file and need to get to an area around a specific line that is not in the first 100 lines, say line 583, don't just use the scroll_down command multiple times. Instead, use the goto 583 command. It's much quicker. It is okay to scroll if you don't know the exact line number.
++
++      3. Do not try to install any packages with `pip`, `conda`, or any other way. This will usually not work. If the environment is not set up correctly, try to fix the issue without executing python code or running any tests that require the package installed/
++      STRATEGY:
++
++      1. Use the tool `browse` by asking it to `get description from https://nvd.nist.gov/vuln/detail/<CVE-ID>`.
++
++      Your name is SWE-CVE-Bot and your email address is swe_cve_bot@microsoft.com. Use this information for the git configuration.
++
++
++      (Open file: {{open_file}})
++      (Current directory: {{working_dir}})
++      bash-$
++    next_step_template: |-
++      {{observation}}
++      (Open file: {{open_file}})
++      (Current directory: {{working_dir}})
++      bash-$
++    next_step_no_output_template: |-
++      Your command ran successfully and did not produce any output.
++      (Open file: {{open_file}})
++      (Current directory: {{working_dir}})
++      bash-$
++    demonstration_template: |
++      Here is a demonstration of how to correctly accomplish this task.
++      It is included to show you how to correctly use the interface.
++      You do not need to follow exactly what is done in the demonstration.
++      --- DEMONSTRATION ---
++      {{demonstration}}
++      --- END OF DEMONSTRATION ---
++    demonstrations:
++      # - demos/CVE-2024-453392025-02-25_17:22:31/CVE-2024-453392025-02-25_17:22:31.demo.yaml
++      - trajectories/demonstrations/replay__marshmallow-code__marshmallow-1867__function_calling_replace__install-1/marshmallow-code__marshmallow-1867.traj
++    put_demos_in_history: true
++  tools:
++    env_variables:
++      WINDOW: 100
++      OVERLAP: 2
++      AZURE_OPENAI_API_KEY: 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
++      AZURE_OPENAI_ENDPOINT: 'https://ai-bkannan5197ai619228097268.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-08-01-preview'
++    bundles:
++      - path: tools/registry
++      - path: tools/defaults
++      - path: tools/search
++      # - path: tools/edit_linting
++      - path: tools/edit_replace
++      - path: tools/submit
++      - path: tools/browse
++    enable_bash_tool: true
++    parse_function:
++      type: function_calling
++  history_processors:
++    - type: last_n_observations
++      n: 5
+diff --git a/config/patch_backporter.yaml b/config/patch_backporter.yaml
+new file mode 100644
+index 00000000..c119b412
+--- /dev/null
++++ b/config/patch_backporter.yaml
+@@ -0,0 +1,178 @@
++agent:
++  templates:
++    system_template: |-
++      SETTING: You are an autonomous programmer, and you're working directly in the command line with a special interface.
++      Your primary job is to backport patches to another branch. You will be given the commit-id or the patch link of the patch to be backported abd the target branch or the target tag to apply the patch to. Probably, the repo you'll be working on will be already checkedout to the target branch or the tag.
++
++      In addition to the patch, you'll get the NIST CVE-ID for the vulnerability that the patch is fixing.
++
++      Your job is to understand the CVE and the patch. Then you'll backport the patch to the target branch.
++
++      First you will get the CVE detail and description from the Internet. Then you'll correlate that with the given patch to verify both are relevant. Then you'll try to cherrypick the patch to the target branch. If the patch applies cleanly, you'll be able to submit the patch. If the patch does not apply cleanly, try to apply that partially and then manually apply the remaining changes.
++
++      Don't leave the repository in inconsistent state. If the patch fails to apply, you should abort it with `git cherry-pick --abort` and start over the process. Make sure you understand the current state of the repository before running the next command.
++
++      If the commit-id or the target_branch is not relevant to the repo, please report and exit.
++      If the patch is not relevant to the CVE, please flag it and continue backporting the patch.
++
++      While applying manually, preserve the original patch as much as possible. Don't try to optimize the patch. Even though any chunk of the patch is not creating any logic difference, still you should keep it. Because, these changes may make difference in the subsequent development. Even you should preserve comments from the original patch. Make sure you read each every line of the original file carefully and account every single change from the original patch.
++
++      The special interface consists of a file editor that shows you {{WINDOW}} lines of a file at a time.
++      In addition to typical bash commands, you can also use specific commands to help you navigate and edit files.
++      Also, you are equipped with a tool to browse the internet to get information about the CVE-ID or any other information you need.
++      To call a command, you need to invoke it with a function call/tool call.
++
++      Please note that THE EDIT COMMAND REQUIRES PROPER INDENTATION.
++
++      When you are editing a file, read the block before and after the block you're going to edit and make sure your changes are not introducing any new issues.
++
++      Have in your context which file you are editing and what is the programming language of the file. Please give importance to special syntax of each programming language.
++      For example in C programming language, you should give importance to the semicolons at the end of each line. In Python, you should give importance to the indentation.
++      There are special cases like if there is not '{' after an 'if' or 'while' or similar statement, only the next line is under the block. Be careful about these kind of special cases.
++
++      When in doubt, use `browse` to get the syntax related or other information from Internet.
++
++      For example, if you are looking at this file:
++
++      def fct():
++          print("Hello world")
++
++      and you want to edit the file to read:
++
++      def fct():
++          print("Hello")
++          print("world")
++
++      you search string should be `Hello world` and your replace string should be `"Hello"\n    print("world")`
++      (note the extra spaces before the print statement!).
++
++      You could also get the same result by search for `    print("Hello world")` and replace with `    print("Hello")\n    print("world")`.
++
++      RESPONSE FORMAT:
++      Your shell prompt is formatted as follows:
++      (Open file: <path>)
++      (Current directory: <cwd>)
++      bash-$
++
++      First, you should _always_ include a general thought about what you're going to do next.
++      Then, for every response, you must include exactly _ONE_ tool call/function call.
++
++      _always_ open the correct file before editing it. Use the `open` command to open the file you want to edit. You can also use the `find` and `search` commands to locate the file you want to edit.
++
++      Remember, you should always include a _SINGLE_ tool call/function call and then wait for a response from the shell before continuing with more discussion and commands. Everything you include in the DISCUSSION section will be saved for future reference.
++      If you'd like to issue two commands at once, PLEASE DO NOT DO THAT! Please instead first submit just the first tool call, and then after receiving a response you'll be able to issue the second .
++
++      Note that the environment DOES NOT support interactive session commands (e.g. python, vim), so please do not invoke them. Any command that require interactive session like "git show", "git log", etc., will not work. So, DON'T USE ANY INTERACTIVE SESSION COMMANDS OR THEIR DERIVATIVES LIKE `git log --grep=`, `git show HEAD`, `git diff --cached`, etc.,. When you want to run these commands, redirect them to a temporary file and open it for reading. For example, `git log --oneline > /backport/tmp/git_log.txt`.
++
++      The final output MUST be copied to /backport/<cve_id>_<package>.patch. The file name is very important here. If the directory /backport doesn't exist, please create it. But don't include the backport directory in the patch. If you end-up in some error and can't create a patch, please report that also in the same file.
++
++      Your name is SWE-CVE-Bot and your email address is swe_cve_bot@microsoft.com. Use this information for the git configuration. So, befor trying to commit the changes, please set the git configuration.
++    instance_template: |-
++      ISSUE:
++      {{problem_statement}}
++  
++      INSTRUCTIONS:
++      Now, you're going to solve this issue on your own. Your terminal session has started and you're in the repository's root directory. You can use any bash commands or the special interface to help you. Edit all the files you need to and run any checks or tests that you want.
++      Remember, YOU SHOULD ALWAYS INCLUDE EXACTLY ONE TOOL CALL/FUNCTION CALL PER RESPONSE.
++      When you're satisfied with all of the changes you've made, you can submit your changes to the code base by simply running the submit command.
++      Note however that you cannot use any interactive session commands (e.g. python, vim) in this environment, but you can write scripts and run them. E.g. you can write a python script and then run it with the python command.
++
++      NOTE ABOUT THE EDIT COMMAND: Indentation really matters! When editing a file, make sure to insert appropriate indentation before each line!
++
++      Use the `browse` tool when you want some information from the Internet.
++
++      GENERAL IMPORTANT TIPS:
++
++      1. If you run a command and it doesn't work, try running a different command. A command that did not work once will not work the second time unless you modify it!
++
++      2. If you open a file and need to get to an area around a specific line that is not in the first 100 lines, say line 583, don't just use the scroll_down command multiple times. Instead, use the goto 583 command. It's much quicker. It is okay to scroll if you don't know the exact line number. Similarly when searching for a function, instead of scrolling down, use the search command to find the function name.
++
++      3. If a patch is successfully applied to some files, you should stage them using `git add` before manually applying the patch to other files. This will help you to keep track of the changes you've made.
++
++      4. Always make sure to look at the currently open file and the current working directory (which appears right after the currently open file). The currently open file might be in a different directory than the working directory! Note that some commands, such as 'create', open files, so they might change the current open file.
++
++      5. When editing files, it is easy to accidentally to write code with incorrect indentation or make other mistakes. Always check the code after you issue an edit to make sure that it reflects what you wanted to accomplish. If it didn't, issue another command to fix it. ALWAYS USE PROPER INDENTATION WHEN EDITING FILES EVEN IF THE SYNTAX IS CORRECT WITHOUT INDENTATION. Code readability is important.
++
++      6. When editing files, first explain the code you want to edit and why it is causing the problem. Then explain the edit you want to make and how it fixes the problem. Explain how the edit does not break existing functionality.
++
++      7. Do not try to install any packages with `pip`, `conda`, or any other way. This will usually not work. If the environment is not set up correctly, try to fix the issue without executing python code or running any tests that require the package installed.
++
++      8. Preserve the comments from the original patch whenever possible. They are important for understanding the code.
++
++      9. Use the same commit message as the original patch. If the commit message is not relevant to the target branch, you can change it to a more relevant one. ALWAYS COMMIT THE CHANGES AND GENERATE THE PATCH USING "git format-patch -1". And then rename it to desired name.
++
++      10. Don't be over confident. Open the patch file and CVE description file multiple times to make sure you're doing the right thing. If you're not sure about the fix, don't hesitate to ask for reading again or searching the Internet.
++
++      STRATEGY:
++
++      1. Always start by verifying the environment. Make sure the `/backport` directory exists. If not, create it. Confirm that you are inside the correct repo and checkedout the correct branch or tag. Make sure your email address and the name are set correctly in the git configuration.
++
++      2. Use the `browse` tool by `browse "get description from the Internet preferrable from https://nvd.nist.gov/vuln/detail/<CVE-ID>"`. Do this to make-sure that the fix is relevant to the CVE.
++
++      3. First try to cherrypick the commit or directly apply the patch to the target branch. If the patch applies cleanly, you can submit it. If the patch partially applies, you can try to apply the patch partially by using `--exclude` option for the git command to exclude failing files and partially applying the patch to other files. After applying partially, make sure that you staged the changes. __always__ make sure you apply the patch to the files that are not failing.
++
++      4. If there are any documentaion or test code chainges in the patch, remove it from the patch if they're not applying cleanly. Don't struggle with those changes. Files with rst, md and similar extensions are document files. Also, the unit test codes are not being shipped in the final product. So, you can ignore them.
++
++      5. If cherry-pick or git apply fails on documentation or test code, you can try reapplying the patch while ignoring those documentation and test changes. Use `git apply <original_patch> --exclude=<doc_file_1> --exclude=<doc_file_2> --exclude=<test_file_1> --exclude=<text_file_2> ...` to apply the patch. If the patch applies cleanly, you can submit it.
++
++      6. You don't need to worry about testing the fix. Try minimal self testing if available. But if it is not available or not running properl, don't worry about it.
++
++      7. When you need to manually apply the changes, read the changes yet to be applied from the original patch caefully. The `open` command only shows 100 lines, if the patch is longer make sure you scroll down to see the complete file. Make sure you understand all the chunks of the patch that need to be manually applied. Print all the description of changes it does in your thoughts as it will be served to you in the history in future prompts. And start making changes one by one.
++
++      8. When you're manually applying a patch, make sure that you apply all the chunks from original patch are considered. If you are not ignoring a chunk of the patch, you should give reason why you are ignoring it.
++
++      9. Locate relevant code using the find and search commands. `open` the file you want to edit. Use these tools most of the time to make yourself familier with the code base. Better understanding is preferred.
++
++      9. Use the `edit` command to perform edits.
++
++      10. When you think you've fixed the bug, commit the changes and create the final patch into /backport/<cve_id>_<package>.patch. If the directory /backport doesn't exist, please create it. But don't include the backport directory in the patch.
++
++      11. Even though original patch has the CVE information, ALWAYS use the `browse` tool by asking it to `get description from the Internet preferrable from https://nvd.nist.gov/vuln/detail/<CVE-ID>`. You can call `browse "get description from the Internet preferrable from https://nvd.nist.gov/vuln/detail/<CVE-ID>"`. Do this to make-sure that the fix is relevant to the CVE.
++
++
++      (Open file: {{open_file}})
++      (Current directory: {{working_dir}})
++      bash-$
++    next_step_template: |-
++      {{observation}}
++      (Open file: {{open_file}})
++      (Current directory: {{working_dir}})
++      bash-$
++    next_step_no_output_template: |-
++      Your command ran successfully and did not produce any output.
++      (Open file: {{open_file}})
++      (Current directory: {{working_dir}})
++      bash-$
++    demonstration_template: |
++      Here is a demonstration of how to correctly accomplish this task.
++      It is included to show you how to correctly use the interface.
++      You do not need to follow exactly what is done in the demonstration.
++      --- DEMONSTRATION ---
++      {{demonstration}}
++      --- END OF DEMONSTRATION ---
++    demonstrations:
++      # - demos/CVE-2024-453392025-02-25_17:22:31/CVE-2024-453392025-02-25_17:22:31.demo.yaml
++      - trajectories/demonstrations/replay__marshmallow-code__marshmallow-1867__function_calling_replace__install-1/marshmallow-code__marshmallow-1867.traj
++    put_demos_in_history: true
++  tools:
++    env_variables:
++      WINDOW: 100
++      OVERLAP: 2
++      AZURE_OPENAI_API_KEY: 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' # SECRET: DON'T MERGE THE COMMIT!
++      AZURE_OPENAI_ENDPOINT: 'https://ai-bkannan5197ai619228097268.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-08-01-preview'
++      # AZURE_OPENAI_ENDPOINT: 'https://ai-bkannan5197ai619228097268.openai.azure.com//chat/completions'
++      # AZURE_OPENAI_MODEL: 'o1'
++    bundles:
++      - path: tools/registry
++      - path: tools/defaults
++      - path: tools/search
++      # - path: tools/edit_linting
++      - path: tools/edit_replace
++      - path: tools/submit
++      - path: tools/browse
++    enable_bash_tool: true
++    parse_function:
++      type: function_calling
++  history_processors:
++    - type: last_n_observations
++      n: 50
+diff --git a/sweagent/agent/agents.py b/sweagent/agent/agents.py
+index f8b4f1b9..f26aa149 100644
+--- a/sweagent/agent/agents.py
++++ b/sweagent/agent/agents.py
+@@ -913,9 +913,13 @@ class DefaultAgent(AbstractAgent):
+         execution_t0 = time.perf_counter()
+         run_action: str = self.tools.guard_multiline_input(step.action).strip()
+         try:
++            hack_timeout = self.tools.config.execution_timeout
++            if "browse" in run_action:
++                hack_timeout = 300
++
+             step.observation = self._env.communicate(
+                 input=run_action,
+-                timeout=self.tools.config.execution_timeout,
++                timeout=hack_timeout,
+                 check="raise" if self._always_require_zero_exit_code else "ignore",
+             )
+         except CommandTimeoutError:
+diff --git a/sweagent/api/server.py b/sweagent/api/server.py
+index 0f3f2ad0..f2ddf191 100644
+--- a/sweagent/api/server.py
++++ b/sweagent/api/server.py
+@@ -168,7 +168,7 @@ def _build_cors_preflight_response():
+ 
+ def run_from_cli(args: list[str] | None = None):
+     app.debug = True
+-    socketio.run(app, port=8000, debug=True, allow_unsafe_werkzeug=True)
++    socketio.run(app, host='0.0.0.0', port=8000, debug=True, allow_unsafe_werkzeug=True)
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/sweagent/environment/repo.py b/sweagent/environment/repo.py
+index 0abf4438..240275f6 100644
+--- a/sweagent/environment/repo.py
++++ b/sweagent/environment/repo.py
+@@ -164,6 +164,7 @@ class GithubRepoConfig(BaseModel):
+                             f"cd {self.repo_name}",
+                             "git init",
+                             f"git remote add origin {url}",
++                            "git fetch --all",
+                             f"git fetch --depth 1 origin {base_commit}",
+                             "git checkout FETCH_HEAD",
+                             "cd ..",
+@@ -181,7 +182,65 @@ class GithubRepoConfig(BaseModel):
+         return _get_git_reset_commands(self.base_commit)
+ 
+ 
+-RepoConfig = LocalRepoConfig | GithubRepoConfig | PreExistingRepoConfig
++class GitRepoConfig(BaseModel):
++    git_url: str
++
++    base_commit: str = Field(default="HEAD")
++    """The commit to reset the repository to. The default is HEAD,
++    i.e., the latest commit. You can also set this to a branch name (e.g., `dev`),
++    a tag (e.g., `v0.1.0`), or a commit hash (e.g., `a4464baca1f`).
++    SWE-agent will then start from this commit when trying to solve the problem.
++    """
++
++    clone_timeout: float = 500
++    """Timeout for git clone operation."""
++
++    type: Literal["git"] = "git"
++    """Discriminator for (de)serialization/CLI. Do not change."""
++
++    model_config = ConfigDict(extra="forbid")
++
++    def model_post_init(self, __context: Any) -> None:
++        pass
++
++    @property
++    def repo_name(self) -> str:
++        # Get the last part of the URL and return
++        return self.git_url.split("/")[-1]
++
++    def copy(self, deployment: AbstractDeployment):
++        """Clones the repository to the sandbox."""
++        base_commit = self.base_commit
++        url = self.git_url
++        logger.debug(f"Cloning repository from {url} to {self.repo_name}. Checking out {base_commit}")
++        asyncio.run(
++            deployment.runtime.execute(
++                Command(
++                    command=" && ".join(
++                        (
++                            f"mkdir {self.repo_name}",
++                            f"cd {self.repo_name}",
++                            "git init",
++                            f"git remote add origin {url}",
++                            "git fetch --all",
++                            "git fetch --tags",
++                            f"git checkout {base_commit}",
++                            "cd ..",
++                        )
++                    ),
++                    timeout=self.clone_timeout,
++                    shell=True,
++                    check=True,
++                )
++            ),
++        )
++
++    def get_reset_commands(self) -> list[str]:
++        """Issued after the copy operation or when the environment is reset."""
++        return _get_git_reset_commands(self.base_commit)
++
++
++RepoConfig = LocalRepoConfig | GithubRepoConfig | PreExistingRepoConfig | GitRepoConfig
+ 
+ 
+ def repo_from_simplified_input(
+diff --git a/sweagent/environment/swe_env.py b/sweagent/environment/swe_env.py
+index 792a6633..d1ecd1f7 100644
+--- a/sweagent/environment/swe_env.py
++++ b/sweagent/environment/swe_env.py
+@@ -151,7 +151,11 @@ class SWEEnv:
+         if self.repo is not None:
+             startup_commands = [
+                 f"cd /{self.repo.repo_name}",
+-                "export ROOT=$(pwd -P)",
++                # "export ROOT=$(pwd -P)",
++                # "git status",
++                # "git restore .",
++                # f"git reset --hard {self.repo.base_commit}",
++                "git clean -fdq",
+             ]
+             self.logger.debug("Resetting repository %s to commit %s", self.repo.repo_name, self.repo.base_commit)
+             startup_commands.extend(self.repo.get_reset_commands())
+@@ -166,6 +170,20 @@ class SWEEnv:
+     def close(self) -> None:
+         """Shutdown SWE-ReX deployment etc."""
+         self.logger.info("Beginning environment shutdown...")
++        # Copy all the files inside /backport directory to the host machine's /backport directory
++        try:
++            files = self.communicate("ls -1 /backport", check="ignore")
++            if files:
++                for file in files.split("\n"):
++                    if file:
++                        file = file.strip()
++                        if not file:
++                            continue
++                        with open(f"/backport/{file}", "w") as f:
++                            f.write(self.communicate(f"cat /backport/{file}", check="ignore"))
++        except Exception as e:
++            self.logger.error(f"Error copying files from /backport: {e}")
++
+         asyncio.run(self.deployment.stop())
+         self._chook.on_close()
+ 
+diff --git a/sweagent/inspector/style.css b/sweagent/inspector/style.css
+index a5072351..deef668c 100644
+--- a/sweagent/inspector/style.css
++++ b/sweagent/inspector/style.css
+@@ -265,6 +265,7 @@ h2 {
+   margin: 0;
+   padding: 0;
+   flex: 1; /* Allow code to fill the space */
++  text-wrap: auto;
+ }
+ 
+ .messages-section {
+diff --git a/sweagent/run/batch_instances.py b/sweagent/run/batch_instances.py
+index d1623b9e..f1c37e3b 100644
+--- a/sweagent/run/batch_instances.py
++++ b/sweagent/run/batch_instances.py
+@@ -1,10 +1,15 @@
++import datetime
++import json
+ import random
+ import re
+ from abc import ABC, abstractmethod
+ from pathlib import Path
++import time
+ from typing import Any, Literal
+ 
+ from pydantic import BaseModel, ConfigDict, Field, model_validator
++import requests
++import yaml
+ from swerex.deployment.config import (
+     DeploymentConfig,
+     DockerDeploymentConfig,
+@@ -14,7 +19,7 @@ from swerex.deployment.config import (
+ from typing_extensions import Self
+ 
+ from sweagent.agent.problem_statement import ProblemStatementConfig, TextProblemStatement
+-from sweagent.environment.repo import GithubRepoConfig, LocalRepoConfig, PreExistingRepoConfig
++from sweagent.environment.repo import GithubRepoConfig, LocalRepoConfig, PreExistingRepoConfig, GitRepoConfig
+ from sweagent.environment.swe_env import EnvironmentConfig
+ from sweagent.utils.files import load_file
+ from sweagent.utils.log import get_logger
+@@ -115,6 +120,8 @@ class SimpleBatchInstance(BaseModel):
+             repo = None
+         elif "github" in self.repo_name:
+             repo = GithubRepoConfig(github_url=self.repo_name, base_commit=self.base_commit)
++        elif "/" in self.repo_name and self.repo_name.count("/") > 1:
++            repo = GitRepoConfig(git_url=self.repo_name, base_commit=self.base_commit)
+         elif "/" not in self.repo_name:
+             repo = PreExistingRepoConfig(repo_name=self.repo_name, base_commit=self.base_commit)
+         else:
+@@ -168,6 +175,21 @@ class SimpleBatchInstance(BaseModel):
+             base_commit=instance["base_commit"],
+         )
+ 
++    @classmethod
++    def from_cve_backport_bench(cls, instance: dict[str, Any]) -> Self:
++        logger.debug(f"Converting instance from CVE backport benchmark: {instance}")
++        """Convert instances from the CVE backport benchmark to the `SimpleBatchInstance` format."""
++        cve_id = instance["CVE"]
++        package = instance["Package"]
++        return cls(
++            image_name="python:3.11",
++            problem_statement=f"Backport {instance['Patch SHA']} to {instance['Target Branch']} for the package {package}. Final patch should be copied to `/backport/{cve_id}_{package}.patch`.",
++            id=cve_id + "_" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
++            repo_name=instance["Repo"],
++            base_commit=instance["Target Branch"],
++            extra_fields= {"CVE": cve_id, "package": package}
++        )
++
+ 
+ class InstancesFromFile(BaseModel, AbstractInstanceSource):
+     """Load instances from a file."""
+@@ -244,6 +266,48 @@ class InstancesFromHuggingFace(BaseModel, AbstractInstanceSource):
+         return f"{ds_name}_{self.split}"
+ 
+ 
++class BackportBenchConfig(BaseModel, AbstractInstanceSource):
++    """For CVE backport evaluation."""
++
++    deployment: DeploymentConfig = Field(
++        default_factory=lambda: DockerDeploymentConfig(image="python:3.11"),
++    )
++    """Deployment configuration. Note that the image_name option is overwritten by the images specified in the task instances.
++    """
++
++    type: Literal["backport_bench"] = "backport_bench"
++    """Discriminator for (de)serialization/CLI. Do not change."""
++
++    filter: str = ".*"
++    """Regular expression to filter the instances by instance id."""
++    slice: str = ""
++    """Select only a slice of the instances (after filtering by `filter`).
++    Possible values are stop or start:stop or start:stop:step.
++    (i.e., it behaves exactly like python's list slicing `list[slice]`).
++    """
++    shuffle: bool = False
++    """Shuffle the instances (before filtering and slicing)."""
++
++    evaluate: bool = False
++    """Run sb-cli to evaluate"""
++
++    def get_instance_configs(self) -> list[BatchInstance]:
++        from datasets import load_dataset
++
++        dataset_name = "0xba1a/cve_backport_bench_1"
++        ds: list[dict[str, Any]] = load_dataset(dataset_name, split="train")  # type: ignore
++        logger.debug(f"Got {len(ds)} instances from {dataset_name}")
++        logger.debug(f"Dataset: {ds}")
++        instances = [
++            SimpleBatchInstance.from_cve_backport_bench(instance).to_full_batch_instance(self.deployment) for instance in ds
++        ]
++        return _filter_batch_items(instances, filter_=self.filter, slice_=self.slice, shuffle=self.shuffle)
++
++    @property
++    def id(self) -> str:
++        return f"backport_bench"
++
++
+ class SWEBenchInstances(BaseModel, AbstractInstanceSource):
+     """Load instances from SWE-bench."""
+ 
+@@ -330,4 +394,4 @@ class ExpertInstancesFromFile(BaseModel, AbstractInstanceSource):
+         return self.path.stem
+ 
+ 
+-BatchInstanceSourceConfig = InstancesFromHuggingFace | InstancesFromFile | SWEBenchInstances | ExpertInstancesFromFile
++BatchInstanceSourceConfig = InstancesFromHuggingFace | InstancesFromFile | SWEBenchInstances | ExpertInstancesFromFile | BackportBenchConfig
+diff --git a/tools/browse/bin/browse b/tools/browse/bin/browse
+new file mode 100644
+index 00000000..3fb47cc0
+--- /dev/null
++++ b/tools/browse/bin/browse
+@@ -0,0 +1,72 @@
++#!/usr/bin/env python3
++
++import asyncio
++import os
++import sys
++from pprint import pprint
++from typing import List
++
++from browser_use import Agent, AgentHistoryList, Browser, BrowserConfig
++from langchain_openai import AzureChatOpenAI
++
++TOOLS_METADATA_DIR = "/usr/local/share/tools-metadata"
++TOOLS_METADATA_FILE = f"{TOOLS_METADATA_DIR}/browse.json"
++
++def store_input_tokens(tokens: int) -> None:
++    if not os.path.exists(TOOLS_METADATA_DIR):
++        os.makedirs(TOOLS_METADATA_DIR)
++
++    with open(TOOLS_METADATA_FILE, "w") as f:
++        f.write(f'{{"input_tokens": {tokens}}}')
++
++
++async def main(args: List[str]) -> int:
++    if len(args) > 1:
++        print("browse allows only one URL at a time.")
++        return 1
++
++    if not args:
++        print("Usage: browse <URL>")
++        return 1
++
++    what_to_browse = args[0]
++
++    api_key = os.getenv("AZURE_OPENAI_API_KEY")
++    if not api_key:
++        print("Error: Missing Azure OpenAI API key.")
++        return 1
++    
++    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
++    if not azure_endpoint:
++        print("Error: Missing Azure OpenAI endpoint.")
++        return 1
++
++    llm = AzureChatOpenAI(
++        model = "gpt-4o",
++        api_version = '2024-10-21',
++        api_key = api_key,
++        azure_endpoint = azure_endpoint
++    )
++
++    browser_config = BrowserConfig(
++        headless = True
++    )
++    browser = Browser(config = browser_config)
++
++    agent = Agent(
++        browser = browser,
++        task = what_to_browse,
++        llm = llm
++    )
++
++    history : AgentHistoryList = await agent.run()
++    print("Final Result:")
++    pprint(history.final_result(), indent=4)
++    
++    store_input_tokens(history.total_input_tokens())  
++
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(asyncio.run(main(sys.argv[1:])))
+\ No newline at end of file
+diff --git a/tools/browse/config.yaml b/tools/browse/config.yaml
+new file mode 100644
+index 00000000..daeb2f68
+--- /dev/null
++++ b/tools/browse/config.yaml
+@@ -0,0 +1,9 @@
++tools:
++  browse:
++    signature: "browse <what_to_browse>"
++    docstring: "It gets the information from Internet"
++    arguments:
++      - name: what_to_browse
++        type: string
++        description: "the item to get information about"
++        required: true
+\ No newline at end of file
+diff --git a/tools/browse/install.sh b/tools/browse/install.sh
+new file mode 100644
+index 00000000..dcd3e003
+--- /dev/null
++++ b/tools/browse/install.sh
+@@ -0,0 +1,15 @@
++#!/usr/bin/env bash
++
++bundle_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
++
++export PYTHONPATH=$PYTHONPATH:"$bundle_dir/lib"
++
++# Write default environment variables into the environment storage
++_write_env "AZURE_OPENAI_API_KEY" "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
++# SECRET. DON'T MERGET THE COMMIT
++_write_env "AZURE_OPENAI_ENDPOINT" "https://ai-bkannan5197ai619228097268.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-08-01-preview"
++
++# install browser-use
++pip install browser-use
++playwright install-deps
++playwright install
+\ No newline at end of file

@@ -164,6 +164,7 @@ class GithubRepoConfig(BaseModel):
                             f"cd {self.repo_name}",
                             "git init",
                             f"git remote add origin {url}",
+                            "git fetch --all",
                             f"git fetch --depth 1 origin {base_commit}",
                             "git checkout FETCH_HEAD",
                             "cd ..",
@@ -181,7 +182,65 @@ class GithubRepoConfig(BaseModel):
         return _get_git_reset_commands(self.base_commit)
 
 
-RepoConfig = LocalRepoConfig | GithubRepoConfig | PreExistingRepoConfig
+class GitRepoConfig(BaseModel):
+    git_url: str
+
+    base_commit: str = Field(default="HEAD")
+    """The commit to reset the repository to. The default is HEAD,
+    i.e., the latest commit. You can also set this to a branch name (e.g., `dev`),
+    a tag (e.g., `v0.1.0`), or a commit hash (e.g., `a4464baca1f`).
+    SWE-agent will then start from this commit when trying to solve the problem.
+    """
+
+    clone_timeout: float = 500
+    """Timeout for git clone operation."""
+
+    type: Literal["git"] = "git"
+    """Discriminator for (de)serialization/CLI. Do not change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    def model_post_init(self, __context: Any) -> None:
+        pass
+
+    @property
+    def repo_name(self) -> str:
+        # Get the last part of the URL and return
+        return self.git_url.split("/")[-1]
+
+    def copy(self, deployment: AbstractDeployment):
+        """Clones the repository to the sandbox."""
+        base_commit = self.base_commit
+        url = self.git_url
+        logger.debug(f"Cloning repository from {url} to {self.repo_name}. Checking out {base_commit}")
+        asyncio.run(
+            deployment.runtime.execute(
+                Command(
+                    command=" && ".join(
+                        (
+                            f"mkdir {self.repo_name}",
+                            f"cd {self.repo_name}",
+                            "git init",
+                            f"git remote add origin {url}",
+                            "git fetch --all",
+                            "git fetch --tags",
+                            f"git checkout {base_commit}",
+                            "cd ..",
+                        )
+                    ),
+                    timeout=self.clone_timeout,
+                    shell=True,
+                    check=True,
+                )
+            ),
+        )
+
+    def get_reset_commands(self) -> list[str]:
+        """Issued after the copy operation or when the environment is reset."""
+        return _get_git_reset_commands(self.base_commit)
+
+
+RepoConfig = LocalRepoConfig | GithubRepoConfig | PreExistingRepoConfig | GitRepoConfig
 
 
 def repo_from_simplified_input(

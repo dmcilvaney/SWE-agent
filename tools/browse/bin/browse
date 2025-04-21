@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+
+import asyncio
+import os
+import sys
+from pprint import pprint
+from typing import List
+
+from browser_use import Agent, AgentHistoryList, Browser, BrowserConfig
+from langchain_openai import AzureChatOpenAI
+
+TOOLS_METADATA_DIR = "/usr/local/share/tools-metadata"
+TOOLS_METADATA_FILE = f"{TOOLS_METADATA_DIR}/browse.json"
+
+def store_input_tokens(tokens: int) -> None:
+    if not os.path.exists(TOOLS_METADATA_DIR):
+        os.makedirs(TOOLS_METADATA_DIR)
+
+    with open(TOOLS_METADATA_FILE, "w") as f:
+        f.write(f'{{"input_tokens": {tokens}}}')
+
+
+async def main(args: List[str]) -> int:
+    if len(args) > 1:
+        print("browse allows only one URL at a time.")
+        return 1
+
+    if not args:
+        print("Usage: browse <URL>")
+        return 1
+
+    what_to_browse = args[0]
+
+    api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    if not api_key:
+        print("Error: Missing Azure OpenAI API key.")
+        return 1
+    
+    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    if not azure_endpoint:
+        print("Error: Missing Azure OpenAI endpoint.")
+        return 1
+
+    llm = AzureChatOpenAI(
+        model = "gpt-4o",
+        api_version = '2024-10-21',
+        api_key = api_key,
+        azure_endpoint = azure_endpoint
+    )
+
+    browser_config = BrowserConfig(
+        headless = True
+    )
+    browser = Browser(config = browser_config)
+
+    agent = Agent(
+        browser = browser,
+        task = what_to_browse,
+        llm = llm
+    )
+
+    history : AgentHistoryList = await agent.run()
+    print("Final Result:")
+    pprint(history.final_result(), indent=4)
+    
+    store_input_tokens(history.total_input_tokens())  
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main(sys.argv[1:])))

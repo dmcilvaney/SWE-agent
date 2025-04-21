@@ -913,9 +913,13 @@ class DefaultAgent(AbstractAgent):
         execution_t0 = time.perf_counter()
         run_action: str = self.tools.guard_multiline_input(step.action).strip()
         try:
+            hack_timeout = self.tools.config.execution_timeout
+            if "browse" in run_action:
+                hack_timeout = 300
+
             step.observation = self._env.communicate(
                 input=run_action,
-                timeout=self.tools.config.execution_timeout,
+                timeout=hack_timeout,
                 check="raise" if self._always_require_zero_exit_code else "ignore",
             )
         except CommandTimeoutError:

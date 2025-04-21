@@ -1,10 +1,15 @@
+import datetime
+import json
 import random
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
+import time
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+import requests
+import yaml
 from swerex.deployment.config import (
     DeploymentConfig,
     DockerDeploymentConfig,
@@ -14,7 +19,7 @@ from swerex.deployment.config import (
 from typing_extensions import Self
 
 from sweagent.agent.problem_statement import ProblemStatementConfig, TextProblemStatement
-from sweagent.environment.repo import GithubRepoConfig, LocalRepoConfig, PreExistingRepoConfig
+from sweagent.environment.repo import GithubRepoConfig, LocalRepoConfig, PreExistingRepoConfig, GitRepoConfig
 from sweagent.environment.swe_env import EnvironmentConfig
 from sweagent.utils.files import load_file
 from sweagent.utils.log import get_logger
@@ -115,6 +120,8 @@ class SimpleBatchInstance(BaseModel):
             repo = None
         elif "github" in self.repo_name:
             repo = GithubRepoConfig(github_url=self.repo_name, base_commit=self.base_commit)
+        elif "/" in self.repo_name and self.repo_name.count("/") > 1:
+            repo = GitRepoConfig(git_url=self.repo_name, base_commit=self.base_commit)
         elif "/" not in self.repo_name:
             repo = PreExistingRepoConfig(repo_name=self.repo_name, base_commit=self.base_commit)
         else:
@@ -166,6 +173,21 @@ class SimpleBatchInstance(BaseModel):
             instance_id=iid,
             repo_name="testbed",
             base_commit=instance["base_commit"],
+        )
+
+    @classmethod
+    def from_cve_backport_bench(cls, instance: dict[str, Any]) -> Self:
+        logger.debug(f"Converting instance from CVE backport benchmark: {instance}")
+        """Convert instances from the CVE backport benchmark to the `SimpleBatchInstance` format."""
+        cve_id = instance["CVE"]
+        package = instance["Package"]
+        return cls(
+            image_name="python:3.11",
+            problem_statement=f"Backport {instance['Patch SHA']} to {instance['Target Branch']} for the package {package}. Final patch should be copied to `/backport/{cve_id}_{package}.patch`.",
+            id=cve_id + "_" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+            repo_name=instance["Repo"],
+            base_commit=instance["Target Branch"],
+            extra_fields= {"CVE": cve_id, "package": package}
         )
 
 
@@ -242,6 +264,48 @@ class InstancesFromHuggingFace(BaseModel, AbstractInstanceSource):
     def id(self) -> str:
         ds_name = "".join(l for l in self.dataset_name if l.isalnum() or l in ["-", "_"])
         return f"{ds_name}_{self.split}"
+
+
+class BackportBenchConfig(BaseModel, AbstractInstanceSource):
+    """For CVE backport evaluation."""
+
+    deployment: DeploymentConfig = Field(
+        default_factory=lambda: DockerDeploymentConfig(image="python:3.11"),
+    )
+    """Deployment configuration. Note that the image_name option is overwritten by the images specified in the task instances.
+    """
+
+    type: Literal["backport_bench"] = "backport_bench"
+    """Discriminator for (de)serialization/CLI. Do not change."""
+
+    filter: str = ".*"
+    """Regular expression to filter the instances by instance id."""
+    slice: str = ""
+    """Select only a slice of the instances (after filtering by `filter`).
+    Possible values are stop or start:stop or start:stop:step.
+    (i.e., it behaves exactly like python's list slicing `list[slice]`).
+    """
+    shuffle: bool = False
+    """Shuffle the instances (before filtering and slicing)."""
+
+    evaluate: bool = False
+    """Run sb-cli to evaluate"""
+
+    def get_instance_configs(self) -> list[BatchInstance]:
+        from datasets import load_dataset
+
+        dataset_name = "0xba1a/cve_backport_bench_1"
+        ds: list[dict[str, Any]] = load_dataset(dataset_name, split="train")  # type: ignore
+        logger.debug(f"Got {len(ds)} instances from {dataset_name}")
+        logger.debug(f"Dataset: {ds}")
+        instances = [
+            SimpleBatchInstance.from_cve_backport_bench(instance).to_full_batch_instance(self.deployment) for instance in ds
+        ]
+        return _filter_batch_items(instances, filter_=self.filter, slice_=self.slice, shuffle=self.shuffle)
+
+    @property
+    def id(self) -> str:
+        return f"backport_bench"
 
 
 class SWEBenchInstances(BaseModel, AbstractInstanceSource):
@@ -330,4 +394,4 @@ class ExpertInstancesFromFile(BaseModel, AbstractInstanceSource):
         return self.path.stem
 
 
-BatchInstanceSourceConfig = InstancesFromHuggingFace | InstancesFromFile | SWEBenchInstances | ExpertInstancesFromFile
+BatchInstanceSourceConfig = InstancesFromHuggingFace | InstancesFromFile | SWEBenchInstances | ExpertInstancesFromFile | BackportBenchConfig

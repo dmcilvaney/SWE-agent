@@ -151,7 +151,11 @@ class SWEEnv:
         if self.repo is not None:
             startup_commands = [
                 f"cd /{self.repo.repo_name}",
-                "export ROOT=$(pwd -P)",
+                # "export ROOT=$(pwd -P)",
+                # "git status",
+                # "git restore .",
+                # f"git reset --hard {self.repo.base_commit}",
+                "git clean -fdq",
             ]
             self.logger.debug("Resetting repository %s to commit %s", self.repo.repo_name, self.repo.base_commit)
             startup_commands.extend(self.repo.get_reset_commands())
@@ -166,6 +170,20 @@ class SWEEnv:
     def close(self) -> None:
         """Shutdown SWE-ReX deployment etc."""
         self.logger.info("Beginning environment shutdown...")
+        # Copy all the files inside /backport directory to the host machine's /backport directory
+        try:
+            files = self.communicate("ls -1 /backport", check="ignore")
+            if files:
+                for file in files.split("\n"):
+                    if file:
+                        file = file.strip()
+                        if not file:
+                            continue
+                        with open(f"/backport/{file}", "w") as f:
+                            f.write(self.communicate(f"cat /backport/{file}", check="ignore"))
+        except Exception as e:
+            self.logger.error(f"Error copying files from /backport: {e}")
+
         asyncio.run(self.deployment.stop())
         self._chook.on_close()
 
