@@ -7,3 +7,4 @@ tools:
         type: string
         description: "the item to get information about"
         required: true
+    execution_timeout: 600

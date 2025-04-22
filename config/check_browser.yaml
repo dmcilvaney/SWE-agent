@@ -72,8 +72,8 @@ agent:
     env_variables:
       WINDOW: 100
       OVERLAP: 2
-      AZURE_OPENAI_API_KEY: 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-      AZURE_OPENAI_ENDPOINT: 'https://ai-bkannan5197ai619228097268.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-08-01-preview'
+      AZURE_OPENAI_API_KEY: 'sk-proxy-fake-key-for-local-use-only'
+      AZURE_OPENAI_ENDPOINT: 'http://127.0.0.1:8000'
     bundles:
       - path: tools/registry
       - path: tools/defaults

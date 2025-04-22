@@ -182,7 +182,12 @@ class SWEEnv:
                         with open(f"/backport/{file}", "w") as f:
                             f.write(self.communicate(f"cat /backport/{file}", check="ignore"))
         except Exception as e:
-            self.logger.error(f"Error copying files from /backport: {e}")
+            # If there is no /backport directory, thats ok, just log an info and continue
+            if "No such file or directory" in str(e):
+                self.logger.info("No /backport directory found, skipping copy.")
+            else:
+                # If there is some other error, log it
+                self.logger.error(f"Error copying files from /backport: {e}")
 
         asyncio.run(self.deployment.stop())
         self._chook.on_close()

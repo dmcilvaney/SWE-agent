@@ -10,7 +10,7 @@ from browser_use import Agent, AgentHistoryList, Browser, BrowserConfig
 from langchain_openai import AzureChatOpenAI
 
 async def main():
-    what_to_browse = "Visit example.com and find the fax number of it's maintainer."  # Default URL
+    what_to_browse = "get description from https://nvd.nist.gov/vuln/detail/CVE-2022-2022"  # Default URL
 
     # Use our proxy endpoint instead of direct Azure endpoint
     api_key = "sk-proxy-fake-key-for-local-use-only"

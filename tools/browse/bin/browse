@@ -3,14 +3,20 @@
 import asyncio
 import os
 import sys
+import signal
+import time
 from pprint import pprint
-from typing import List
+from typing import List, Optional, Dict, Any
+from concurrent.futures import TimeoutError
 
 from browser_use import Agent, AgentHistoryList, Browser, BrowserConfig
 from langchain_openai import AzureChatOpenAI
 
 TOOLS_METADATA_DIR = "/usr/local/share/tools-metadata"
 TOOLS_METADATA_FILE = f"{TOOLS_METADATA_DIR}/browse.json"
+# Set a timeout of 4 minutes (240 seconds) - slightly less than the tool timeout 
+# to ensure we can return some results
+TIMEOUT_SECONDS = 240
 
 def store_input_tokens(tokens: int) -> None:
     if not os.path.exists(TOOLS_METADATA_DIR):
@@ -18,6 +24,60 @@ def store_input_tokens(tokens: int) -> None:
 
     with open(TOOLS_METADATA_FILE, "w") as f:
         f.write(f'{{"input_tokens": {tokens}}}')
+
+
+def log_debug(message: str) -> None:
+    """Write debug messages directly to stderr for visibility in Docker containers"""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[BROWSE_DEBUG] [{timestamp}] {message}", file=sys.stderr, flush=True)
+
+
+async def run_with_timeout(task: str, llm, browser_config: BrowserConfig) -> Dict[str, Any]:
+    """Run the browser task with a timeout, returning partial results if possible"""
+    log_debug(f"Starting browse task: {task}")
+    
+    browser = Browser(config=browser_config)
+    agent = Agent(
+        browser=browser,
+        task=task,
+        llm=llm
+    )
+    
+    try:
+        # Wrap the run in a timeout
+        log_debug("Running agent with timeout of {TIMEOUT_SECONDS} seconds")
+        history: AgentHistoryList = await asyncio.wait_for(
+            agent.run(),
+            timeout=TIMEOUT_SECONDS
+        )
+        log_debug("Task completed successfully")
+        result = history.final_result()
+        try:
+            token_count = history.total_input_tokens()
+            log_debug(f"Total input tokens: {token_count}")
+            store_input_tokens(token_count)
+        except Exception as e:
+            log_debug(f"Failed to store input tokens: {str(e)}")
+        return result
+    except asyncio.TimeoutError:
+        log_debug(f"Task timed out after {TIMEOUT_SECONDS} seconds")
+        return {
+            "error": f"Browse operation timed out after {TIMEOUT_SECONDS} seconds",
+            "partial_result": "The browser operation took too long and was terminated. Try a more specific query."
+        }
+    except Exception as e:
+        log_debug(f"Task failed with exception: {str(e)}")
+        return {
+            "error": f"Browse operation failed: {str(e)}",
+            "suggestion": "Check your query and try again with a more specific request."
+        }
+    finally:
+        # Ensure the browser is closed
+        try:
+            await browser.close()
+            log_debug("Browser closed")
+        except Exception as e:
+            log_debug(f"Error closing browser: {str(e)}")
 
 
 async def main(args: List[str]) -> int:
@@ -30,6 +90,7 @@ async def main(args: List[str]) -> int:
         return 1
 
     what_to_browse = args[0]
+    log_debug(f"Browse query: {what_to_browse}")
 
     api_key = os.getenv("AZURE_OPENAI_API_KEY")
     if not api_key:
@@ -41,32 +102,65 @@ async def main(args: List[str]) -> int:
         print("Error: Missing Azure OpenAI endpoint.")
         return 1
 
-    llm = AzureChatOpenAI(
-        model = "gpt-4o",
-        api_version = '2024-10-21',
-        api_key = api_key,
-        azure_endpoint = azure_endpoint
-    )
+    log_debug(f"Using Azure OpenAI API - Endpoint: {azure_endpoint[:15]}...")
+
+    try:
+        llm = AzureChatOpenAI(
+            model = "gpt-4o",
+            api_version = '2024-10-21',
+            api_key = api_key,
+            azure_endpoint = azure_endpoint
+        )
+        log_debug("LLM initialized successfully")
+    except Exception as e:
+        log_debug(f"Failed to initialize LLM: {str(e)}")
+        print(f"Error initializing LLM: {str(e)}")
+        return 1
 
     browser_config = BrowserConfig(
         headless = True
     )
-    browser = Browser(config = browser_config)
-
-    agent = Agent(
-        browser = browser,
-        task = what_to_browse,
-        llm = llm
-    )
-
-    history : AgentHistoryList = await agent.run()
-    print("Final Result:")
-    pprint(history.final_result(), indent=4)
+    log_debug("Browser config initialized")
     
-    store_input_tokens(history.total_input_tokens())  
+    # Run the browse task with a timeout
+    log_debug("Starting browser task with timeout")
+    result = await run_with_timeout(what_to_browse, llm, browser_config)
+    
+    log_debug("Final result ready to display")
+    print("Final Result:")
+    pprint(result, indent=4)
 
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main(sys.argv[1:])))
+    # Set up a signal handler for hard timeouts
+    def handle_timeout(signum, frame):
+        print("[BROWSE_DEBUG] Hard timeout triggered", file=sys.stderr)
+        print("Final Result:")
+        pprint({
+            "error": "Browse operation terminated due to global timeout",
+            "partial_result": "The operation was terminated before completion. Please try a more specific query."
+        }, indent=4)
+        sys.exit(1)
+    
+    # Register signal handlers
+    signal.signal(signal.SIGALRM, handle_timeout)
+    # Set a hard timeout slightly longer than our async timeout
+    signal.alarm(TIMEOUT_SECONDS + 30)
+    
+    log_debug(f"Browse tool started with timeout: {TIMEOUT_SECONDS} seconds")
+    try:
+        sys.exit(asyncio.run(main(sys.argv[1:])))
+    except KeyboardInterrupt:
+        log_debug("Operation cancelled by user")
+        print("Operation cancelled by user.")
+        sys.exit(1)
+    except Exception as e:
+        log_debug(f"Unexpected error: {str(e)}")
+        print(f"Unexpected error: {str(e)}")
+        sys.exit(1)
+    finally:
+        # Disable alarm
+        signal.alarm(0)
+        log_debug("Browse tool finished execution")
