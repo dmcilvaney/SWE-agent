@@ -1,0 +1,7 @@
+ARG BASE_IMAGE=mcr.microsoft.com/cbl-mariner/base/core:2.0
+FROM ${BASE_IMAGE}
+
+# Install minimal tooling & downloader
+RUN tdnf install -y dnf >/dev/null && \
+    dnf install -y dnf-plugins-core rpm-build >/dev/null && \
+    dnf -y --enablerepo=mariner-official-base-source makecache --refresh

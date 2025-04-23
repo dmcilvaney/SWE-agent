@@ -16,17 +16,18 @@
         "docker-in-docker": "latest"
     },
     "mounts": [
-        "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+        "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+        "source=/home/damcilva/transmute,target=/workspaces/transmute,type=bind",
     ],
     "remoteUser": "vscode",
-    
+
     // Add direct host access configuration
     "runArgs": ["--network=host"],
-    
+
     // Alternative approach with port forwarding
     //"forwardPorts": [8000],
     "appPort": [8000]
-    
+
     // Add host.docker.internal to /etc/hosts for Linux
     //"initializeCommand": "bash -c '[[ \"$(uname)\" == \"Linux\" ]] && echo \"Adding host.docker.internal to /etc/hosts\" || true'",
     //"postStartCommand": "bash -c '[[ \"$(uname)\" == \"Linux\" ]] && echo \"127.0.0.1 host.docker.internal\" | sudo tee -a /etc/hosts || true'"
