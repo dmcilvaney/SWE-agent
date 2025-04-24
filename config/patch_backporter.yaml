@@ -80,9 +80,9 @@ agent:
       When you're satisfied with all of the changes you've made, you can submit your changes to the code base by simply running the submit command.
       Note however that you cannot use any interactive session commands (e.g. python, vim) in this environment, but you can write scripts and run them. E.g. you can write a python script and then run it with the python command.
 
-      NOTE ABOUT THE EDIT COMMAND: Indentation really matters! When editing a file, make sure to insert appropriate indentation before each line!
+      ENSURE YOU CHECK THE FINAL OUTPUT FILE BEFORE DECLARING SUCCESS.
 
-      Use the `browse` tool when you want some information from the Internet.
+      NOTE ABOUT THE EDIT COMMAND: Indentation really matters! When editing a file, make sure to insert appropriate indentation before each line!
 
       GENERAL IMPORTANT TIPS:
 
@@ -112,6 +112,8 @@ agent:
 
       2. Check the provided CVE information, if available.
 
+      3. The info and patch are added as an extra commit, roll that back since they aren't aprt of the real project (git rest --soft HEAD~1 will help). Unstage them so they aren't included going forwards.
+
       3. First try to cherrypick the commit or directly apply the patch to the target branch. If the patch applies cleanly, you can submit it. If the patch partially applies, you can try to apply the patch partially by using `--reject` to create reject files for each bad chunk, or `--exclude` to exclude failing files and partially applying the patch to other files. After applying partially, make sure that you staged the changes. __always__ make sure you apply the patch to the files that are not failing.
 
       4. If there are any documentaion or test code chainges in the patch, remove it from the patch if they're not applying cleanly. Don't struggle with those changes. Files with rst, md and similar extensions are document files. Also, the unit test codes are not being shipped in the final product. So, you can ignore them.
@@ -130,7 +132,7 @@ agent:
 
       10. When you think you've fixed the bug, commit the changes and create the final patch into /backport/<cve_id>_<package>.patch. If the directory /backport doesn't exist, please create it. But don't include the backport directory in the patch.
 
-      11. Even though original patch has the CVE information, ALWAYS use the `browse` tool by asking it to `get description from the Internet preferrable from https://nvd.nist.gov/vuln/detail/<CVE-ID>`. You can call `browse "get description from the Internet preferrable from https://nvd.nist.gov/vuln/detail/<CVE-ID>"`. Do this to make-sure that the fix is relevant to the CVE.
+      11. Before declaring success, MAKE SURE THE OUTPUT PATCH IN '/backport/<cve_id>_<package>.patch' IS CORRECT. Try reverting the patch and applying it again to make sure it applies cleanly. If it doesn't, you need to fix the patch.
 
 
       (Open file: {{open_file}})

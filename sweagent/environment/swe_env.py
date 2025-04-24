@@ -179,7 +179,7 @@ class SWEEnv:
                         file = file.strip()
                         if not file:
                             continue
-                        with open(f"/backport/{file}", "w") as f:
+                        with open(f"./backport/{file}", "w") as f:
                             f.write(self.communicate(f"cat /backport/{file}", check="ignore"))
         except Exception as e:
             # If there is no /backport directory, thats ok, just log an info and continue

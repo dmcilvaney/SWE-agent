@@ -160,8 +160,12 @@ docker run --rm -e SRPM_FILENAME="$srpm_filename" -e SRPM_VERSION="$srpm_version
 
 # Prepare the swe-agent working directory
 echo "Preparing SWE agent working directory..."
-mkdir -p "$output_dir/sweagent"
-mkdir -p "$output_dir/sweagent"
+tempdir=$(mktemp -d)
+sweagent_dir="$HOST_OUTPUT_DIR/sweagent"
+echo "Temporary directory: $tempdir"
+
+mkdir -p "$sweagent_dir"
+mkdir -p "$sweagent_dir/backport"
 
 # Copy the relevant files to the SWE agent working directory, then git init and commit them.
 # First grab the directory from the BUILD folder (this is the one that was built by rpmbuild -bp)
@@ -173,11 +177,15 @@ if [ -z "$dir_name" ]; then
 fi
 
 echo "Found directory: $dir_name"
-cp -r "$dir_name" "$output_dir/sweagent/"
+cp -r "$dir_name"/* "$sweagent_dir"
+
+# Add the upstream patch and info files
+cp "$input_patch_path" "$sweagent_dir/SWE-agent_upstream.patch"
+cp "$output_dir/inputs/info.txt" "$sweagent_dir/SWE-agent_info.txt"
 
 # Initialize a git repository in the working directory before we add the extra files
 (
-  cd "$output_dir/sweagent"
+  cd "$sweagent_dir"
   git init
   git branch -m current_code
   git config user.name "SWE-CVE-Bot"
@@ -187,14 +195,19 @@ cp -r "$dir_name" "$output_dir/sweagent/"
 )
 
 # Add the upstream patch and info files
-cp "$input_patch_path" "$output_dir/sweagent/SWE-agent_upstream.patch"
-cp "$output_dir/inputs/info.txt" "$output_dir/sweagent/SWE-agent_info.txt"
-
+cp "$input_patch_path" "$sweagent_dir/SWE-agent_upstream.patch"
+cp "$output_dir/inputs/info.txt" "$sweagent_dir/SWE-agent_info.txt"
+# Add the patch and info as an additional commit
+(
+  cd "$sweagent_dir"
+  git add SWE-agent_upstream.patch SWE-agent_info.txt
+  git commit -m "TEMPORARY: Add upstream patch and info for $cve_id"
+)
 
 sweagent run \
   --config config/patch_backporter.yaml \
   --env.repo.type=local \
-  --env.repo.path=/workspaces/SWE-agent/temp/sweagent/ \
+  --env.repo.path="$sweagent_dir" \
   --problem_statement.text='backport SWE-agent_upstream.patch and place the result in the backport folder.' \
   --agent.model.name=azure/gpt-4o \
   --agent.model.api_base='http://127.0.0.1:8000'
