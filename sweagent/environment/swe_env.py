@@ -151,7 +151,11 @@ class SWEEnv:
         if self.repo is not None:
             startup_commands = [
                 f"cd /{self.repo.repo_name}",
-                "export ROOT=$(pwd -P)",
+                # "export ROOT=$(pwd -P)",
+                # "git status",
+                # "git restore .",
+                # f"git reset --hard {self.repo.base_commit}",
+                "git clean -fdq",
             ]
             self.logger.debug("Resetting repository %s to commit %s", self.repo.repo_name, self.repo.base_commit)
             startup_commands.extend(self.repo.get_reset_commands())
@@ -166,6 +170,7 @@ class SWEEnv:
     def close(self) -> None:
         """Shutdown SWE-ReX deployment etc."""
         self.logger.info("Beginning environment shutdown...")
+
         asyncio.run(self.deployment.stop())
         self._chook.on_close()
 

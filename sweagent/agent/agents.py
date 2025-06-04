@@ -912,10 +912,14 @@ class DefaultAgent(AbstractAgent):
         self._chook.on_action_started(step=step)
         execution_t0 = time.perf_counter()
         run_action: str = self.tools.guard_multiline_input(step.action).strip()
+        hack_timeout = self.tools.config.execution_timeout
         try:
+            if "browse" in run_action:
+                hack_timeout = 300
+
             step.observation = self._env.communicate(
                 input=run_action,
-                timeout=self.tools.config.execution_timeout,
+                timeout=hack_timeout,
                 check="raise" if self._always_require_zero_exit_code else "ignore",
             )
         except CommandTimeoutError:
@@ -931,7 +935,7 @@ class DefaultAgent(AbstractAgent):
                 raise
             step.observation = Template(self.templates.command_cancelled_timeout_template).render(
                 **self._get_format_dict(),
-                timeout=self.tools.config.execution_timeout,
+                timeout=hack_timeout,
                 command=run_action,
             )
         else:

@@ -1,0 +1,9 @@
+{
+    "id": "CVE-2023-2861",
+    "description": "CVE-2023-2861 is an improper access control vulnerability affecting QEMU. The vulnerability arises from insufficient checks in the authentication or access control mechanisms,\nwhich could allow an attacker to escalate privileges or access sensitive data. Detailed analysis indicates that the flaw is exploited by manipulating internal\nparameters leading to memory exposure or unauthorized command execution.\n\nResearch from the Debian LTS advisory (https://lists.debian.org/debian-lts-announce/2024/03/msg00012.html) and NetApp advisories\n(https://security.netapp.com/advisory/ntap-20240125-0005/ and https://security.netapp.com/advisory/ntap-20240229-0002/) provided further insights into\navailable patches and commit fixes. The advisories include patch links that address the root cause, with priority given to raw patch files where\navailable for clarity and direct application.",
+    "patches": [
+        "https://lists.debian.org/debian-lts-announce/2024/03/msg00012.html",
+        "https://security.netapp.com/advisory/ntap-20240125-0005/",
+        "https://security.netapp.com/advisory/ntap-20240229-0002/"
+    ]
+}

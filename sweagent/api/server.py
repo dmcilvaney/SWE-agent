@@ -168,7 +168,7 @@ def _build_cors_preflight_response():
 
 def run_from_cli(args: list[str] | None = None):
     app.debug = True
-    socketio.run(app, port=8000, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=8000, debug=True, allow_unsafe_werkzeug=True)
 
 
 if __name__ == "__main__":

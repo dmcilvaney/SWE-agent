@@ -1,0 +1,49 @@
+#!/bin/bash
+
+set -e
+
+backport_dir="/backport"
+tag_name="SWE_AGENT_init"
+
+main() {
+    echo "Resetting the repo at $(pwd) to pepare for backporting."
+
+    git am --abort >/dev/null 2>&1 && echo "Aborting any ongoing am process..."
+
+    # Abort any ongoing merge or rebase
+    if git rev-parse --verify MERGE_HEAD >/dev/null 2>&1; then
+        echo "Aborting merge..."
+        git merge --abort
+    fi
+    if git rev-parse --verify REBASE_HEAD >/dev/null 2>&1; then
+        echo "Aborting rebase..."
+        git rebase --abort
+    fi
+    if git rev-parse --verify CHERRY_PICK_HEAD >/dev/null 2>&1; then
+        echo "Aborting cherry-pick..."
+        git cherry-pick --abort
+    fi
+
+
+    # Hard reset the repository to the first commit
+    git reset --hard $(git rev-list --max-parents=0 HEAD)
+    git clean -fdx
+    echo "All changes in the repository have been discarded. The repository is now at the first commit."
+
+    # Remove and recreate the tag if it exists, or create it if it doesn't
+    if git rev-parse --verify "$tag_name" >/dev/null 2>&1; then
+        git tag -d "$tag_name"
+        echo "Tag '$tag_name' deleted."
+    fi
+    git tag "$tag_name"
+    echo "Tag '$tag_name' created at the current commit."
+
+        # Clear backport directory and recreate it
+    rm -rf "$backport_dir"
+    mkdir -p "$backport_dir"
+    echo "Clean backport directory created at $backport_dir"
+
+    exit 0
+}
+
+main "$@"

@@ -1,0 +1,9 @@
+tools:
+  submit:
+    signature: "submit [<confirm>]"
+    docstring: "submits the backported patch in /backport. Must call without --confirm first to prepare the patch."
+    arguments:
+      - name: confirm
+        type: string
+        description: "once the patch is submitted, call again with --confirm to confirm the submission."
+        required: false

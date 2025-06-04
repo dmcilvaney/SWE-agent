@@ -265,6 +265,7 @@ h2 {
   margin: 0;
   padding: 0;
   flex: 1; /* Allow code to fill the space */
+  text-wrap: auto;
 }
 
 .messages-section {

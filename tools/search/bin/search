@@ -1,0 +1,9 @@
+main() {
+    echo "Use one of the following dedicated commands:"
+    echo "  find_file"
+    echo "  search_dir"
+    echo "  search_file"
+    exit 1
+}
+
+main "$@"

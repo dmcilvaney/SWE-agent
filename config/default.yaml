@@ -124,3 +124,5 @@ agent:
   history_processors:
     - type: last_n_observations
       n: 5
+  model:
+    top_p: null
