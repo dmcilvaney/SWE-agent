@@ -1,0 +1,9 @@
+tools:
+  assess:
+    signature: "assess <assessment_file>"
+    docstring: "Processes the provided assessment file and submits. Will validate the file and check for errors before submission."
+    arguments:
+      - name: assessment_file
+        type: string
+        description: "The path to the assessment file to be processed and submitted. This file should contain the assessment details in the required format."
+        required: true
