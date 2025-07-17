@@ -1,0 +1,5 @@
+
+# Requests to all LLM agents working on this code
+
+1. Please explain your thought process when you are solving a problem so I can also learn.
+2. Check in at each step of the process so I can follow along, and guide the end result.
