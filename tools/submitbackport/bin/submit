@@ -1,0 +1,146 @@
+#!/bin/bash
+
+# Parse arguments
+CONFIRM_FLAG=false
+CONFIRM_FLAG_BREADCRUMB_PATH="/backport/confirm_flag"
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --confirm)
+      CONFIRM_FLAG=true
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+main() {
+    # Get the patch file path
+    PATCH_FILE=$(ls -1 /backport/*.patch 2>/dev/null | head -n 1)
+
+    # Ensure that the script was run at least once without --confirm. Once the patch is "ready", place a breadcrumb
+    # to indicate we can run it with --confirm to submit the patch.
+    if [ "$CONFIRM_FLAG" = true ]; then
+        if [ ! -f "$CONFIRM_FLAG_BREADCRUMB_PATH" ]; then
+            echo "Error: The script must be run at least once without --confirm before using --confirm."
+            echo "Please run the script without --confirm to prepare the patch for submission."
+            exit 1
+        else
+            # Check if the patch has been modified since the last verification
+            CURRENT_HASH=$(sha256sum "$PATCH_FILE" | cut -d' ' -f1)
+            STORED_HASH=$(cat "$CONFIRM_FLAG_BREADCRUMB_PATH")
+
+            if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
+                echo "Error: The patch has been modified since it was last verified."
+                echo "Please run the script without --confirm to verify the new patch."
+                rm "$CONFIRM_FLAG_BREADCRUMB_PATH"
+                exit 1
+            fi
+        fi
+    fi
+
+    # Ensure exactly one patch is in /backport
+    if [ "$(ls -1 /backport/*.patch 2>/dev/null | wc -l)" -ne 1 ]; then
+        echo "Error: There should be exactly one patch in '/backport'."
+        echo "Currently found: $(ls -1 /backport/*.patch 2>/dev/null | wc -l)"
+        echo "Please ensure that the final patch is in '/backport' and named <pkg>-<cve>.patch"
+        exit 1
+    fi
+
+    # Check for unstaged changes
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "Error: There are unstaged changes in the repository."
+        echo "Please commit or stash your changes before submitting a patch."
+        echo "The submission process must apply the patch to a clean working directory for testing."
+        echo "Any unstaged changes will be lost during the test."
+        echo "Unstaged changes:"
+        git status --porcelain
+        exit 1
+    fi
+
+    # Check if 'SWE_AGENT_init' tag exists
+    if ! git rev-parse --verify SWE_AGENT_init >/dev/null 2>&1; then
+        echo "Error: The 'SWE_AGENT_init' tag does not exist."
+        echo "Please create the 'SWE_AGENT_init' tag with 'git tag SWE_AGENT_init <1st commit sha>'" and try again.
+        exit 1
+    fi
+
+    cp /backport/*.patch /root/model.patch
+
+    # Save current state
+    CURRENT_COMMIT=$(git rev-parse HEAD)
+
+    # Try to reset to SWE_AGENT_init tag and apply the patch
+    echo "Checking if patch applies cleanly..."
+
+    # Reset to 'SWE_AGENT_init' tag
+    if ! git reset --hard SWE_AGENT_init 2>/dev/null; then
+        echo "Error: Failed to reset to 'SWE_AGENT_init' tag."
+        git reset --hard $CURRENT_COMMIT
+        exit 1
+    fi
+
+    # Apply the patch and capture any errors
+    if ! git apply /root/model.patch 1>/tmp/patch_output 2>&1; then
+        echo "Error: Patch does not apply cleanly!"
+        echo "==== Patch application errors ===="
+        cat /tmp/patch_output
+        echo "===== Submitted patch ====="
+        cat /root/model.patch
+        echo "============================="
+        echo "Please fix the patch and re-run the script."
+
+        # Restore the original state
+        git reset --hard $CURRENT_COMMIT
+        exit 1
+    fi
+
+    # Reset back to original state after successful test
+    git reset --hard $CURRENT_COMMIT
+
+    # Submit the patch if --confirm is specified
+    echo "All validation checks passed!"
+
+    # Additional validation checks if --confirm is not specified
+    if [ "$CONFIRM_FLAG" = false ]; then
+        echo "Good work, the patch applies cleanly!"
+        echo "Please _CAREFULLY_ review the following checks before submitting the patch:"
+        echo ""
+        echo "=== Validation Checklist ==="
+        echo "1. Does the patch fix the CVE vulnerability completely?"
+        echo "      - Read the initial patch, and the backported patch. Compare them carefully."
+        echo "2. Does the patch include all the tests that were in the original patch?"
+        echo "      - If the original patch included tests, the backported patch should include them too."
+        echo "      - (Unless the tests are not applicable to the backported version at all)."
+        echo "3. Does the patch contain all possible changes to make future backports easier?"
+        echo "      - Check each chunk of the upstream patch carefully."
+        echo "      - If the upstream patch contains changes that are not in the backported patch, check if they are necessary."
+        echo "      - If they are necessary, add them to the backported patch."
+        echo "      - If they are not necessary, add a comment explaining why they are omitted."
+        echo "4. If it was available in the original patch, ensure that the backport includes the original commit message."
+        echo "5. Ensure the patch includes a note from you explaining this was a backport."
+        echo "      - Unless the patch is a verbatim copy of the original patch."
+        echo ""
+        echo "Please review the patch with each of these in mind, and make any changes necessary."
+        echo "Once you are done checking all of the above, please run the script again with 'submit --confirm' to submit it."
+        echo "If you edit the patch, re-run the validation checks by running the script again _WITHOUT_ --confirm."
+
+        # Create the breadcrumb file to indicate that the script passed the initial run and is ready for --confirm
+        sha256sum "$PATCH_FILE" | cut -d' ' -f1 > "$CONFIRM_FLAG_BREADCRUMB_PATH"
+
+        exit 0
+    fi
+
+    # Dynamically construct the submission tags
+    START_TAG="<<SWE"
+    END_TAG=">>"
+    SUBMISSION_KEYWORD="_AGENT_SUBMISSION"
+
+    # Output the submission with dynamically constructed tags
+    echo "${START_TAG}${SUBMISSION_KEYWORD}${END_TAG}"
+    cat /root/model.patch
+    echo "${START_TAG}${SUBMISSION_KEYWORD}${END_TAG}"
+}
+
+main "$@"

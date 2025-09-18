@@ -668,6 +668,7 @@ class LiteLLMModel(AbstractModel):
                 api_version=self.config.api_version,
                 api_key=self.config.choose_api_key(),
                 fallbacks=self.config.fallbacks,
+                drop_params=True,
                 **completion_kwargs,
                 **extra_args,
                 n=n,

@@ -1,4 +1,7 @@
 tools:
+  search:
+    signature: "search"
+    docstring: "Don't use this, use the specific search tools instead."
   find_file:
     signature: "find_file <file_name> [<dir>]"
     docstring: "finds all files with the given name or pattern in dir. If dir is not provided, searches in the current directory"

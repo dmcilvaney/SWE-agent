@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+
+import json
+import os
+import sys
+
+TARGET_FILE = "/root/model.patch"
+
+class Assessment():
+    def __init__(self, cve_id, package, assessment, should_proceed, complexity_level, estimated_effort,
+                 conflict_analysis=None, missing_dependencies=None, comments=None):
+        self.cve_id = cve_id
+        self.package = package
+        self.assessment = assessment
+        self.should_proceed = should_proceed
+        self.complexity_level = complexity_level
+        self.estimated_effort = estimated_effort
+        self.conflict_analysis = conflict_analysis
+        self.missing_dependencies = missing_dependencies
+        self.comments = comments
+
+    def __repr__(self):
+        return (f"Assessment(cve_id={self.cve_id}, package={self.package}, "
+                f"assessment={self.assessment}, should_proceed={self.should_proceed}, "
+                f"complexity_level={self.complexity_level}, estimated_effort={self.estimated_effort}, "
+                f"conflict_analysis={self.conflict_analysis}, missing_dependencies={self.missing_dependencies}, "
+                f"comments={self.comments})")
+
+def process_assessment(assessment):
+    """Validate assessment and output submission tags if valid."""
+
+    # Required fields based on the analyzer schema
+    required_fields = ["cve_id", "package", "assessment", "should_proceed", "complexity_level"]
+
+    # Optional fields that should be present but can be empty
+    optional_fields = ["conflict_analysis", "missing_dependencies", "comments", "estimated_effort"]
+
+    # Validate all required fields are present and not empty
+    for field in required_fields:
+        if field not in assessment:
+            print(f"Error: Missing required field '{field}' in assessment", file=sys.stderr)
+            sys.exit(1)
+        if not assessment[field] or str(assessment[field]).strip() == "":
+            print(f"Error: Field '{field}' is empty in assessment", file=sys.stderr)
+            sys.exit(1)
+
+    # Validate optional fields are present (but can be empty)
+    for field in optional_fields:
+        if field not in assessment:
+            print(f"Warning: Optional field '{field}' is missing from assessment", file=sys.stderr)
+
+    # Validate should_proceed is a valid value
+    valid_proceed_values = ["true", "false", "unknown"]
+    if assessment["should_proceed"] not in valid_proceed_values:
+        print(f"Error: 'should_proceed' must be one of {valid_proceed_values}, got '{assessment['should_proceed']}'", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate complexity_level is a valid value
+    valid_complexity_values = ["trivial", "low", "medium", "high", "extreme", "unknown"]
+    if assessment["complexity_level"] not in valid_complexity_values:
+        print(f"Error: 'complexity_level' must be one of {valid_complexity_values}, got '{assessment['complexity_level']}'", file=sys.stderr)
+        sys.exit(1)
+
+def save_assessment(assessment, target_file=TARGET_FILE):
+    # Save
+    with open(target_file, "w") as f:
+        json.dump(assessment, f, indent=4)
+
+    START_TAG = "<<SWE"
+    END_TAG = ">>"
+    SUBMISSION_KEYWORD = "_AGENT_SUBMISSION"
+
+    print(f"{START_TAG}{SUBMISSION_KEYWORD}{END_TAG}")
+    print(TARGET_FILE)
+    print(f"{START_TAG}{SUBMISSION_KEYWORD}{END_TAG}")
+
+def main(file_path):
+    with open(file_path, "r") as f:
+        assessment = json.load(f)
+
+    # Process the assessment
+    process_assessment(assessment)
+    # Save the assessment to the target file
+    save_assessment(assessment)
+
+if __name__ == "__main__":
+    if len(sys.argv) == 2:
+        file_path = sys.argv[1]
+    else:
+        print("Usage: assess <path_to_assessment_file>", file=sys.stderr)
+        sys.exit(1)
+    sys.exit(main(file_path))

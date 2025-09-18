@@ -152,6 +152,7 @@ class SWEEnv:
             startup_commands = [
                 f"cd /{self.repo.repo_name}",
                 "export ROOT=$(pwd -P)",
+                "git clean -fdq",
             ]
             self.logger.debug("Resetting repository %s to commit %s", self.repo.repo_name, self.repo.base_commit)
             startup_commands.extend(self.repo.get_reset_commands())

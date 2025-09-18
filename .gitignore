@@ -118,6 +118,7 @@ celerybeat.pid
 .venv
 env/
 venv/
+swe-agent-venv/
 ENV/
 env.bak/
 venv.bak/

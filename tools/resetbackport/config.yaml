@@ -1,0 +1,5 @@
+tools:
+  resetbackport:
+    signature: "resetbackport"
+    docstring: "Prepares the working directory for backporting. This is a _destructive_ operation and may destroy any changes (even committed ones)."
+    arguments: []
